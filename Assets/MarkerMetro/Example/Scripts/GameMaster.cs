@@ -430,7 +430,7 @@ namespace MarkerMetro.Unity.WinShared.Example
             else
             {
                 --_remainingMoves;
-                if (_currentSwitched1.name_ == script.name_)
+                if (_currentSwitched1.name == script.name)
                 {
                     // match
                     _currentSwitched1 = null;

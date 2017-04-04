@@ -5,18 +5,16 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine.Windows;
-using UnityPlayer;
-using Windows.Data.Xml.Dom;
-using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.ApplicationModel.Resources;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using Windows.Graphics.Display;
 using Windows.Storage;
-using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
 using Windows.UI.Notifications;
+using Windows.UI.Popups;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
@@ -24,21 +22,12 @@ using Windows.UI.Xaml.Data;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
-using Windows.UI.Popups;
-using MarkerMetro.Unity.WinIntegration;
-using MarkerMetro.Unity.WinIntegration.Logging;
-using NotificationsExtensions.Tiles;
-//using UnityProject.Logging;
 using UnityProject.Config;
-#if UNITY_UWP
-using Windows.UI.ApplicationSettings;
-using MarkerMetro.Unity.WinIntegration.Facebook;
-#endif
-#if UNITY_WP_8_1
-using System.Threading;
-#endif
 
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=234238
+using UnityPlayer;
+using MarkerMetro.Unity.WinIntegration.Logging;
+using NotificationsExtensions.Tiles;
 
 namespace UnityProject
 {
@@ -47,13 +36,13 @@ namespace UnityProject
 	/// </summary>
 	public sealed partial class MainPage : Page
 	{
-
 #if UNITY_METRO_8_1
         static SettingsPane settingsPane;
 #endif
 #if UNITY_WP_8_1
         private Timer timer;
 #endif
+
         private WinRTBridge.WinRTBridge _bridge;
 		
 		private SplashScreen splash;
@@ -61,6 +50,10 @@ namespace UnityProject
 		private WindowSizeChangedEventHandler onResizeHandler;
         DispatcherTimer extendedSplashTimer;
         bool isUnityLoaded;
+#if UNITY_WP_8_1
+		private TypedEventHandler<DisplayInformation, object> onRotationChangedHandler;
+#endif
+        private bool isPhone = false;
 
 		public MainPage()
 		{
@@ -72,34 +65,22 @@ namespace UnityProject
 			_bridge = new WinRTBridge.WinRTBridge();
 			appCallbacks.SetBridge(_bridge);
 
-#if !UNITY_WP_8_1
-			appCallbacks.SetKeyboardTriggerControl(this);
+			bool isWindowsHolographic = false;
+
+#if UNITY_HOLOGRAPHIC
+			// If application was exported as Holographic check if the deviceFamily actually supports it,
+			// otherwise we treat this as a normal XAML application
+			string deviceFamily = Windows.System.Profile.AnalyticsInfo.VersionInfo.DeviceFamily;
+			isWindowsHolographic = String.Compare("Windows.Holographic", deviceFamily) == 0;
 #endif
-			appCallbacks.SetSwapChainPanel(GetSwapChainPanel());
-			appCallbacks.SetCoreWindowEvents(Window.Current.CoreWindow);
-			appCallbacks.InitializeD3DXAML();
 
-            splash = ((App)App.Current).SplashScreen;
-			GetSplashBackgroundColor();
-			OnResize();
-
-			onResizeHandler = new WindowSizeChangedEventHandler((o, e) => OnResize());
-			Window.Current.SizeChanged += onResizeHandler;
-            Window.Current.VisibilityChanged += OnWindowVisibilityChanged;
-
-#if UNITY_WP_8_1
-			SetupLocationService();
-#endif
-#if UNITY_METRO_8_1
-            // Configure settings charm
-            settingsPane = SettingsPane.GetForCurrentView();
-            settingsPane.CommandsRequested += SettingsPaneCommandsRequested;
-#endif
-            // provide the game configuration
-            MarkerMetro.Unity.WinShared.GameController.Instance.Init(AppConfig.Instance);
-
-            AppCallbacks.Instance.RenderingStarted += () =>
-                {
+			if (isWindowsHolographic)
+			{
+				appCallbacks.InitializeViewManager(Window.Current.CoreWindow);
+			}
+			else
+			{
+				appCallbacks.RenderingStarted += () => {
                     isUnityLoaded = true;
                     AppCallbacks.Instance.InvokeOnAppThread(() =>
                     {
@@ -107,14 +88,52 @@ namespace UnityProject
                     }, false);
                 };
 
-            // create extended splash timer
-            extendedSplashTimer = new DispatcherTimer();
-            extendedSplashTimer.Interval = TimeSpan.FromMilliseconds(100);
-            extendedSplashTimer.Tick += ExtendedSplashTimer_Tick;
-            extendedSplashTimer.Start();
+#if UNITY_UWP
+				if (Windows.Foundation.Metadata.ApiInformation.IsApiContractPresent("Windows.Phone.PhoneContract", 1))
+					isPhone = true;
+#endif
+#if !UNITY_WP_8_1
+				appCallbacks.SetKeyboardTriggerControl(this);
+#else
+				isPhone = true;
+#endif
+				appCallbacks.SetSwapChainPanel(GetSwapChainPanel());
+				appCallbacks.SetCoreWindowEvents(Window.Current.CoreWindow);
+				appCallbacks.InitializeD3DXAML();
+
+				splash = ((App)App.Current).splashScreen;
+				GetSplashBackgroundColor();
+				OnResize();
+				onResizeHandler = new WindowSizeChangedEventHandler((o, e) => OnResize());
+				Window.Current.SizeChanged += onResizeHandler;
+                Window.Current.VisibilityChanged += OnWindowVisibilityChanged;
+
+#if UNITY_WP_8_1
+				onRotationChangedHandler = new TypedEventHandler<DisplayInformation, object>((di, o) => { OnRotate(di); });
+				ExtendedSplashImage.RenderTransformOrigin = new Point(0.5, 0.5);
+				var displayInfo = DisplayInformation.GetForCurrentView();
+				displayInfo.OrientationChanged += onRotationChangedHandler;
+				OnRotate(displayInfo);
+
+				SetupLocationService();
+#endif
+#if UNITY_METRO_8_1
+                // Configure settings charm
+                settingsPane = SettingsPane.GetForCurrentView();
+                settingsPane.CommandsRequested += SettingsPaneCommandsRequested;
+#endif
+                // provide the game configuration
+                MarkerMetro.Unity.WinShared.GameController.Instance.Init(AppConfig.Instance);
+
+                // create extended splash timer
+                extendedSplashTimer = new DispatcherTimer();
+                extendedSplashTimer.Interval = TimeSpan.FromMilliseconds(100);
+                extendedSplashTimer.Tick += ExtendedSplashTimer_Tick;
+                extendedSplashTimer.Start();
+            }
 		}
 
-		/// <summary>
+        /// <summary>
         /// Control the extended splash experience
         /// </summary>
         async void ExtendedSplashTimer_Tick(object sender, object e)
@@ -169,7 +188,7 @@ namespace UnityProject
             }
 #endif
         }
-
+        
         static void OnViewUrl(string url)
         {
             AppCallbacks.Instance.InvokeOnUIThread(async () =>
@@ -178,7 +197,6 @@ namespace UnityProject
             }, false);
         }
 #endif
-
         static void Crash()
         {
             AppCallbacks.Instance.InvokeOnUIThread(() =>
@@ -266,7 +284,7 @@ namespace UnityProject
                             {
                                 BackgroundImage = new TileBackgroundImage()
                                 {
-                                    Source = new TileImageSource(mediumImagePath)
+                                    Source = mediumImagePath
                                 },
                                 Children =
                                 {
@@ -301,7 +319,7 @@ namespace UnityProject
                             {
                                 BackgroundImage = new TileBackgroundImage()
                                 {
-                                    Source = new TileImageSource(wideImagePath)
+                                    Source = wideImagePath
                                 },
                                 Children =
                                 {
@@ -336,7 +354,7 @@ namespace UnityProject
                             {
                                 BackgroundImage = new TileBackgroundImage()
                                 {
-                                    Source = new TileImageSource(wideImagePath)
+                                    Source = wideImagePath
                                 },
                                 Children =
                                 {
@@ -379,11 +397,11 @@ namespace UnityProject
         }
 
         /// <summary>
-		/// Invoked when this page is about to be displayed in a Frame.
-		/// </summary>
-		/// <param name="e">Event data that describes how this page was reached.  The Parameter
-		/// property is typically used to configure the page.</param>
-		protected override void OnNavigatedTo(NavigationEventArgs e)
+        /// Invoked when this page is about to be displayed in a Frame.
+        /// </summary>
+        /// <param name="e">Event data that describes how this page was reached.  The Parameter
+        /// property is typically used to configure the page.</param>
+        protected override void OnNavigatedTo(NavigationEventArgs e)
 		{
 			splash = (SplashScreen)e.Parameter;
 			OnResize();
@@ -398,14 +416,41 @@ namespace UnityProject
 			}
 		}
 
+#if UNITY_WP_8_1
+		private void OnRotate(DisplayInformation di)
+		{
+			// system splash screen doesn't rotate, so keep extended one rotated in the same manner all the time
+			int angle = 0;
+			switch (di.CurrentOrientation)
+			{
+			case DisplayOrientations.Landscape:
+				angle = -90;
+				break;
+			case DisplayOrientations.LandscapeFlipped:
+				angle = 90;
+				break;
+			case DisplayOrientations.Portrait:
+				angle = 0;
+				break;
+			case DisplayOrientations.PortraitFlipped:
+				angle = 180;
+				break;
+			}
+			var rotate = new RotateTransform();
+			rotate.Angle = angle;
+			ExtendedSplashImage.RenderTransform = rotate;
+		}
+#endif
+
 		private void PositionImage()
 		{
 			var inverseScaleX = 1.0f;
 			var inverseScaleY = 1.0f;
-#if UNITY_WP_8_1
-			inverseScaleX = inverseScaleX / DXSwapChainPanel.CompositionScaleX;
-			inverseScaleY = inverseScaleY / DXSwapChainPanel.CompositionScaleY;
-#endif
+			if (isPhone)
+			{
+				inverseScaleX = inverseScaleX/DXSwapChainPanel.CompositionScaleX;
+				inverseScaleY = inverseScaleY/DXSwapChainPanel.CompositionScaleY;
+			}
 
 			ExtendedSplashImage.SetValue(Canvas.LeftProperty, splashImageRect.X * inverseScaleX);
 			ExtendedSplashImage.SetValue(Canvas.TopProperty, splashImageRect.Y * inverseScaleY);
@@ -426,18 +471,26 @@ namespace UnityProject
 					return;
 				manifest = manifest.Substring(idx);
 				idx = manifest.IndexOf("\"");
-				manifest = manifest.Substring(idx + 2); // also remove quote and # char after it
+				manifest = manifest.Substring(idx + 1);
 				idx = manifest.IndexOf("\"");
 				manifest = manifest.Substring(0, idx);
-				int value = Convert.ToInt32(manifest, 16) & 0x00FFFFFF;
+				int value = 0;
+				bool transparent = false;
+				if (manifest.Equals("transparent"))
+					transparent = true;
+				else if (manifest[0] == '#') // color value starts with #
+					value = Convert.ToInt32(manifest.Substring(1), 16) & 0x00FFFFFF;
+				else
+					return; // at this point the value is 'red', 'blue' or similar, Unity does not set such, so it's up to user to fix here as well
 				byte r = (byte)(value >> 16);
 				byte g = (byte)((value & 0x0000FF00) >> 8);
 				byte b = (byte)(value & 0x000000FF);
 
 				await CoreWindow.GetForCurrentThread().Dispatcher.RunAsync(CoreDispatcherPriority.High, delegate()
-					{
-						ExtendedSplashGrid.Background = new SolidColorBrush(Color.FromArgb(0xFF, r, g, b));
-					});
+				{
+					byte a = (byte)(transparent ? 0x00 : 0xFF);
+					ExtendedSplashGrid.Background = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+				});
 			}
 			catch (Exception)
 			{ }
@@ -448,14 +501,19 @@ namespace UnityProject
 			return DXSwapChainPanel;
 		}
 
-        public void RemoveSplashScreen()
-        {
-            DXSwapChainPanel.Children.Remove(ExtendedSplashGrid);
-            if (onResizeHandler != null)
-            {
-                Window.Current.SizeChanged -= onResizeHandler;
-                onResizeHandler = null;
-            }
+		public void RemoveSplashScreen()
+		{
+			DXSwapChainPanel.Children.Remove(ExtendedSplashGrid);
+			if (onResizeHandler != null)
+			{
+				Window.Current.SizeChanged -= onResizeHandler;
+				onResizeHandler = null;
+
+#if UNITY_WP_8_1
+				DisplayInformation.GetForCurrentView().OrientationChanged -= onRotationChangedHandler;
+				onRotationChangedHandler = null;
+#endif
+			}
             if (AppConfig.Instance.IapDisclaimerEnabled)
             {
                 CheckForOFT();
@@ -514,7 +572,6 @@ namespace UnityProject
 			}
 		}
 #endif
-
         async void CheckForOFT()
         {
             var settings = ApplicationData.Current.LocalSettings;
@@ -566,6 +623,5 @@ namespace UnityProject
             }
 #endif
         }
-
     }
 }

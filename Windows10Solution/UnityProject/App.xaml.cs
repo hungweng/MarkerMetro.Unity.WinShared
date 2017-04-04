@@ -17,11 +17,6 @@ using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
 using UnityPlayer;
-using System.Diagnostics;
-using MarkerMetro.Unity.WinIntegration.Logging;
-using UnityProject.Config;
-//using UnityProject.Logging;
-
 // The Blank Application template is documented at http://go.microsoft.com/fwlink/?LinkId=234227
 
 namespace UnityProject
@@ -32,7 +27,7 @@ namespace UnityProject
 	sealed partial class App : Application
 	{
 		private AppCallbacks appCallbacks;
-        internal SplashScreen SplashScreen { get; private set; }
+		public SplashScreen splashScreen;
 		
 		/// <summary>
 		/// Initializes the singleton application object.  This is the first line of authored code
@@ -41,6 +36,7 @@ namespace UnityProject
 		public App()
 		{
 			this.InitializeComponent();
+			SetupOrientation();
 			appCallbacks = new AppCallbacks();
 
             UnhandledException += LogUnhandledException;
@@ -103,12 +99,12 @@ namespace UnityProject
             //}
         }
 
-		/// <summary>
-		/// Invoked when application is launched through protocol.
-		/// Read more - http://msdn.microsoft.com/library/windows/apps/br224742
-		/// </summary>
-		/// <param name="args"></param>
-		protected override void OnActivated(IActivatedEventArgs args)
+        /// <summary>
+        /// Invoked when application is launched through protocol.
+        /// Read more - http://msdn.microsoft.com/library/windows/apps/br224742
+        /// </summary>
+        /// <param name="args"></param>
+        protected override void OnActivated(IActivatedEventArgs args)
 		{
 			string appArgs = "";
 			
@@ -116,13 +112,13 @@ namespace UnityProject
 			{
 				case ActivationKind.Protocol:
 					ProtocolActivatedEventArgs eventArgs = args as ProtocolActivatedEventArgs;
-                    SplashScreen = eventArgs.SplashScreen;
+					splashScreen = eventArgs.SplashScreen;
 					appArgs += string.Format("Uri={0}", eventArgs.Uri.AbsoluteUri);
 
 #if UNITY_WP_8_1
                     MarkerMetro.Unity.WinIntegration.Facebook.FBNative.MapUri(eventArgs.Uri);
 #endif
-					break;
+                    break;
 			}
 			InitializeUnity(appArgs);
 		}
@@ -136,7 +132,7 @@ namespace UnityProject
 		{
 			string appArgs = "";
 
-			SplashScreen = args.SplashScreen;
+			splashScreen = args.SplashScreen;
 			appArgs += "File=";
 			bool firstFileAdded = false;
 			foreach (var file in args.Files)
@@ -157,7 +153,7 @@ namespace UnityProject
 		/// <param name="args">Details about the launch request and process.</param>
 		protected override void OnLaunched(LaunchActivatedEventArgs args)
 		{
-            SplashScreen = args.SplashScreen;
+			splashScreen = args.SplashScreen;
 			InitializeUnity(args.Arguments);
 		}
 
@@ -188,14 +184,15 @@ namespace UnityProject
                 MarkerMetro.Unity.WinIntegration.Store.StoreManager.Instance.Initialise(false);
 #endif
 
-				rootFrame = new Frame();
+                rootFrame = new Frame();
 				Window.Current.Content = rootFrame;
+#if !UNITY_HOLOGRAPHIC
 				Window.Current.Activate();
-
+#endif
 				rootFrame.Navigate(typeof(MainPage));
 
                 AppCallBacksInitialized();
-			}
+            }
 
 			Window.Current.Activate();
 		}
@@ -218,5 +215,12 @@ namespace UnityProject
         {
             appCallbacks.InvokeOnUIThread(() => callback(), false);
         }
-    }
+
+        void SetupOrientation()
+		{
+#if UNITY_UWP
+			Unity.UnityGenerated.SetupDisplay();
+#endif
+		}
+	}
 }

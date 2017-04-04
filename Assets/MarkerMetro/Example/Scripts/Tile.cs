@@ -6,11 +6,11 @@ namespace MarkerMetro.Unity.WinShared.Example
     public class Tile : MonoBehaviour
     {
 
-        public string name_;
+        public string name;
 
         public void SetImage(string image_name, Texture2D texture)
         {
-            name_ = image_name;
+            name = image_name;
             Renderer renderer = GetComponent<MeshRenderer>();
             renderer.material.mainTexture = texture;
             transform.rotation = Quaternion.AngleAxis(180, Vector3.up);

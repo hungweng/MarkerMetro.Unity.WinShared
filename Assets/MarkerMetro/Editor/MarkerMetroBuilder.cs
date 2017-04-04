@@ -64,6 +64,7 @@ namespace MarkerMetro.Unity.WinShared.Editor
                 {
                     EditorUserBuildSettings.selectedBuildTargetGroup = BuildTargetGroup.WSA;
                     EditorUserBuildSettings.wsaSDK = WSASDK.UWP;
+                    EditorUserBuildSettings.wsaUWPBuildType = WSAUWPBuildType.XAML;
                 });
         }
 
